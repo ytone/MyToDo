@@ -22,9 +22,11 @@ export default function App() {
         )}
         {screen === 'add' && (
           <AddTaskScreen
+            tasks={store.tasks}
             categories={store.categories}
             onAdd={store.addTask}
             onAddCategory={store.addCategory}
+            onDeleteCategory={store.deleteCategory}
           />
         )}
         {screen === 'today' && (

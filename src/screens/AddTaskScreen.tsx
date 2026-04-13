@@ -3,9 +3,11 @@ import { v4 as uuid } from 'uuid'
 import { Category, EstimatedTime, SubTask, Task } from '../types'
 
 interface Props {
+  tasks: Task[]
   categories: Category[]
   onAdd: (task: Task) => void
   onAddCategory: (cat: Category) => void
+  onDeleteCategory: (id: string) => void
 }
 
 const TIMES: EstimatedTime[] = ['10', '30', '60', '60+']
@@ -18,7 +20,7 @@ const COLORS = [
   'bg-rose-400', 'bg-violet-400', 'bg-yellow-400', 'bg-teal-400',
 ]
 
-export default function AddTaskScreen({ categories, onAdd, onAddCategory }: Props) {
+export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory, onDeleteCategory }: Props) {
   const [title, setTitle] = useState('')
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '')
   const [deadline, setDeadline] = useState('')
@@ -27,6 +29,8 @@ export default function AddTaskScreen({ categories, onAdd, onAddCategory }: Prop
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
   const [newSubtaskTime, setNewSubtaskTime] = useState<EstimatedTime>('30')
   const [showCatForm, setShowCatForm] = useState(false)
+  const [editCatMode, setEditCatMode] = useState(false)
+  const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null)
   const [newCatName, setNewCatName] = useState('')
   const [newCatColor, setNewCatColor] = useState(COLORS[0])
   const [saved, setSaved] = useState(false)
@@ -90,9 +94,16 @@ export default function AddTaskScreen({ categories, onAdd, onAddCategory }: Prop
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-sm text-slate-400">カテゴリ</label>
-          <button onClick={() => setShowCatForm(v => !v)} className="text-xs text-indigo-400 active:text-indigo-500">
-            {showCatForm ? 'キャンセル' : '+ 新規'}
-          </button>
+          <div className="flex gap-3">
+            <button onClick={() => { setEditCatMode(v => !v); setShowCatForm(false) }}
+              className="text-xs text-slate-400 active:text-slate-600">
+              {editCatMode ? '完了' : '編集'}
+            </button>
+            <button onClick={() => { setShowCatForm(v => !v); setEditCatMode(false) }}
+              className="text-xs text-indigo-400 active:text-indigo-500">
+              {showCatForm ? 'キャンセル' : '+ 新規'}
+            </button>
+          </div>
         </div>
         {showCatForm && (
           <div className="bg-white border border-slate-200 rounded-xl p-3 mb-2 space-y-2 shadow-sm">
@@ -116,17 +127,63 @@ export default function AddTaskScreen({ categories, onAdd, onAddCategory }: Prop
         )}
         <div className="flex gap-2 flex-wrap">
           {categories.map(cat => (
-            <button key={cat.id} onClick={() => setCategoryId(cat.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                categoryId === cat.id
-                  ? 'bg-slate-700 text-white border-slate-700'
-                  : 'bg-white text-slate-500 border-slate-200 active:bg-slate-50'
-              }`}>
-              <span className={`w-2 h-2 rounded-full ${cat.color}`} />
-              {cat.name}
-            </button>
+            <div key={cat.id} className="relative">
+              <button onClick={() => !editCatMode && setCategoryId(cat.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  editCatMode
+                    ? 'bg-white text-slate-400 border-slate-200 pr-6'
+                    : categoryId === cat.id
+                      ? 'bg-slate-700 text-white border-slate-700'
+                      : 'bg-white text-slate-500 border-slate-200 active:bg-slate-50'
+                }`}>
+                <span className={`w-2 h-2 rounded-full ${cat.color}`} />
+                {cat.name}
+              </button>
+              {editCatMode && (
+                <button
+                  onClick={() => setConfirmDeleteCatId(cat.id)}
+                  className="absolute -top-1 -right-1 w-4 h-4 bg-rose-400 text-white rounded-full text-[10px] flex items-center justify-center leading-none">
+                  ×
+                </button>
+              )}
+            </div>
           ))}
         </div>
+
+        {/* 削除確認ダイアログ */}
+        {confirmDeleteCatId && (() => {
+          const target = categories.find(c => c.id === confirmDeleteCatId)
+          const count = tasks.filter(t => t.categoryId === confirmDeleteCatId).length
+          return (
+            <div className="mt-2 bg-rose-50 border border-rose-200 rounded-xl p-3 space-y-2">
+              <p className="text-sm text-rose-700 font-medium">
+                「{target?.name}」を削除しますか？
+              </p>
+              {count > 0 && (
+                <p className="text-xs text-rose-500">
+                  このカテゴリには <span className="font-bold">{count}件</span> のタスクが紐づいています。削除後は「未分類」として表示されます。
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmDeleteCatId(null)}
+                  className="flex-1 py-1.5 rounded-lg text-sm border border-slate-200 bg-white text-slate-500">
+                  キャンセル
+                </button>
+                <button
+                  onClick={() => {
+                    if (categoryId === confirmDeleteCatId)
+                      setCategoryId(categories.find(c => c.id !== confirmDeleteCatId)?.id ?? '')
+                    onDeleteCategory(confirmDeleteCatId)
+                    setConfirmDeleteCatId(null)
+                  }}
+                  className="flex-1 py-1.5 rounded-lg text-sm bg-rose-500 text-white font-medium">
+                  削除する
+                </button>
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* Deadline */}
