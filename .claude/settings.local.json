@@ -10,7 +10,10 @@
       "Bash(npm run:*)",
       "Bash(curl -s http://localhost:5173)",
       "mcp__Claude_Preview__preview_start",
-      "Bash(pkill -f \"vite --host\")"
+      "Bash(pkill -f \"vite --host\")",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)"
     ]
   }
 }
