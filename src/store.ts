@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import {
+  collection, doc, onSnapshot,
+  addDoc, updateDoc, deleteDoc, setDoc, query, orderBy
+} from 'firebase/firestore'
+import { db } from './firebase'
 import { Category, Task } from './types'
-
-const TASKS_KEY = 'mytodo_tasks'
-const CATEGORIES_KEY = 'mytodo_categories'
 
 const DEFAULT_CATEGORIES: Category[] = [
   { id: 'private',  name: 'プライベート', color: 'bg-emerald-500' },
@@ -10,64 +12,65 @@ const DEFAULT_CATEGORIES: Category[] = [
   { id: 'work2',    name: '仕事B',        color: 'bg-orange-500' },
 ]
 
-function load<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key)
-    return raw ? JSON.parse(raw) : fallback
-  } catch {
-    return fallback
-  }
-}
+export function useStore(userId: string) {
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [ready, setReady] = useState(false)
 
-function save<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value))
-}
+  const tasksRef = collection(db, 'users', userId, 'tasks')
+  const catsRef  = collection(db, 'users', userId, 'categories')
 
-export function useStore() {
-  const [tasks, setTasksRaw] = useState<Task[]>(() => load(TASKS_KEY, []))
-  const [categories, setCategoriesRaw] = useState<Category[]>(() =>
-    load(CATEGORIES_KEY, DEFAULT_CATEGORIES)
-  )
-
-  const setTasks = (t: Task[] | ((prev: Task[]) => Task[])) => {
-    setTasksRaw(prev => {
-      const next = typeof t === 'function' ? t(prev) : t
-      save(TASKS_KEY, next)
-      return next
+  // タスク購読
+  useEffect(() => {
+    const q = query(tasksRef, orderBy('createdAt', 'desc'))
+    const unsub = onSnapshot(q, snap => {
+      setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task)))
     })
-  }
+    return unsub
+  }, [userId])
 
-  const setCategories = (c: Category[] | ((prev: Category[]) => Category[])) => {
-    setCategoriesRaw(prev => {
-      const next = typeof c === 'function' ? c(prev) : c
-      save(CATEGORIES_KEY, next)
-      return next
+  // カテゴリ購読 & 初期データ投入
+  useEffect(() => {
+    const unsub = onSnapshot(catsRef, async snap => {
+      if (snap.empty) {
+        // 初回ログイン時にデフォルトカテゴリを作成
+        for (const cat of DEFAULT_CATEGORIES) {
+          await setDoc(doc(catsRef, cat.id), { name: cat.name, color: cat.color })
+        }
+      } else {
+        setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as Category)))
+        setReady(true)
+      }
     })
+    return unsub
+  }, [userId])
+
+  const addTask = async (task: Task) => {
+    const { id, ...data } = task
+    await addDoc(tasksRef, data)
   }
 
-  const addTask = (task: Task) => setTasks(prev => [task, ...prev])
-
-  const updateTask = (updated: Task) =>
-    setTasks(prev => prev.map(t => (t.id === updated.id ? updated : t)))
-
-  const deleteTask = (id: string) =>
-    setTasks(prev => prev.filter(t => t.id !== id))
-
-  const completeTask = (id: string) =>
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, completed: true } : t))
-
-  const addCategory = (cat: Category) => setCategories(prev => [...prev, cat])
-
-  const deleteCategory = (id: string) => setCategories(prev => prev.filter(c => c.id !== id))
-
-  return {
-    tasks,
-    categories,
-    addTask,
-    updateTask,
-    deleteTask,
-    completeTask,
-    addCategory,
-    deleteCategory,
+  const updateTask = async (task: Task) => {
+    const { id, ...data } = task
+    await updateDoc(doc(tasksRef, id), data as Record<string, unknown>)
   }
+
+  const deleteTask = async (id: string) => {
+    await deleteDoc(doc(tasksRef, id))
+  }
+
+  const completeTask = async (id: string) => {
+    await updateDoc(doc(tasksRef, id), { completed: true })
+  }
+
+  const addCategory = async (cat: Category) => {
+    const { id, ...data } = cat
+    await setDoc(doc(catsRef, id), data)
+  }
+
+  const deleteCategory = async (id: string) => {
+    await deleteDoc(doc(catsRef, id))
+  }
+
+  return { tasks, categories, ready, addTask, updateTask, deleteTask, completeTask, addCategory, deleteCategory }
 }
