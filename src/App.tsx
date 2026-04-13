@@ -18,6 +18,7 @@ export default function App() {
             tasks={store.tasks}
             categories={store.categories}
             onComplete={store.completeTask}
+            onUpdate={store.updateTask}
           />
         )}
         {screen === 'add' && (

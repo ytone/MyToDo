@@ -214,10 +214,10 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
         </div>
       </div>
 
-      {/* Subtasks (shown when 60+) */}
-      {estimatedTime === '60+' && (
+      {/* Subtasks */}
+      {true && (
         <div>
-          <label className="block text-sm text-slate-400 mb-1">サブタスク（60分以上は分割推奨）</label>
+          <label className="block text-sm text-slate-400 mb-1">サブタスク（任意）</label>
           <div className="space-y-2 mb-2">
             {subtasks.map(s => (
               <div key={s.id} className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">

@@ -9,6 +9,7 @@ interface Props {
   tasks: Task[]
   categories: Category[]
   onComplete: (id: string) => void
+  onUpdate: (task: Task) => void
 }
 
 type TimeFilter = EstimatedTime | 'any'
@@ -32,9 +33,18 @@ function urgencyScore(task: Task): number {
   return score
 }
 
-export default function NextTaskScreen({ tasks, categories, onComplete }: Props) {
+export default function NextTaskScreen({ tasks, categories, onComplete, onUpdate }: Props) {
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('any')
   const [categoryFilter, setCategoryFilter] = useState<string>('all')
+
+  const toggleSubtask = (task: Task, subtaskId: string) => {
+    onUpdate({
+      ...task,
+      subtasks: task.subtasks.map(s =>
+        s.id === subtaskId ? { ...s, completed: !s.completed } : s
+      )
+    })
+  }
 
   const pending = tasks.filter(t => !t.completed)
 
@@ -115,7 +125,13 @@ export default function NextTaskScreen({ tasks, categories, onComplete }: Props)
                 <p className="text-xs text-slate-400 mb-1">サブタスク</p>
                 {suggested.subtasks.map(s => (
                   <div key={s.id} className="flex items-center gap-2">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.completed ? 'bg-emerald-400' : 'bg-slate-300'}`} />
+                    <button
+                      onClick={() => toggleSubtask(suggested, s.id)}
+                      className={`w-4 h-4 rounded border flex-shrink-0 transition-colors ${
+                        s.completed ? 'bg-emerald-400 border-emerald-400' : 'border-slate-300 bg-white'
+                      }`}>
+                      {s.completed && <span className="text-[10px] text-white flex items-center justify-center w-full h-full">✓</span>}
+                    </button>
                     <span className={`text-sm flex-1 ${s.completed ? 'line-through text-slate-400' : 'text-slate-600'}`}>{s.title}</span>
                     <TimeChip time={s.estimatedTime} small />
                   </div>

@@ -1,4 +1,5 @@
-import { Category, Task } from '../types'
+import { useState } from 'react'
+import { Category, EstimatedTime, Task } from '../types'
 import CategoryBadge from '../components/CategoryBadge'
 import TimeChip from '../components/TimeChip'
 import { format, isToday, isBefore, parseISO } from 'date-fns'
@@ -10,6 +11,11 @@ interface Props {
   onComplete: (id: string) => void
   onDelete: (id: string) => void
   onUpdate: (task: Task) => void
+}
+
+const TIMES: EstimatedTime[] = ['10', '30', '60', '60+']
+const TIME_LABELS: Record<EstimatedTime, string> = {
+  '10': '10分', '30': '30分', '60': '60分', '60+': '60分以上',
 }
 
 function isOverdue(deadline: string | null): boolean {
@@ -26,6 +32,10 @@ function isDueToday(deadline: string | null): boolean {
 }
 
 export default function TodayScreen({ tasks, categories, onComplete, onDelete, onUpdate }: Props) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editTime, setEditTime] = useState<EstimatedTime>('30')
+
   const pending = tasks.filter(t => !t.completed)
   const done = tasks.filter(t => t.completed)
 
@@ -42,14 +52,26 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
     return a.createdAt.localeCompare(b.createdAt)
   })
 
+  const startEdit = (task: Task) => {
+    setEditingId(task.id)
+    setEditTitle(task.title)
+    setEditTime(task.estimatedTime)
+  }
+
+  const saveEdit = (task: Task) => {
+    if (editTitle.trim()) {
+      onUpdate({ ...task, title: editTitle.trim(), estimatedTime: editTime })
+    }
+    setEditingId(null)
+  }
+
   const toggleSubtask = (task: Task, subtaskId: string) => {
-    const updated = {
+    onUpdate({
       ...task,
       subtasks: task.subtasks.map(s =>
         s.id === subtaskId ? { ...s, completed: !s.completed } : s
       )
-    }
-    onUpdate(updated)
+    })
   }
 
   if (sorted.length === 0 && done.length === 0) {
@@ -71,6 +93,8 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
             const cat = categories.find(c => c.id === task.categoryId)
             const overdue = isOverdue(task.deadline)
             const today = isDueToday(task.deadline)
+            const isEditing = editingId === task.id
+
             return (
               <div key={task.id} className="bg-white rounded-2xl p-4 space-y-2 border border-slate-100 shadow-sm">
                 <div className="flex items-start gap-2">
@@ -79,11 +103,36 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
                     className="mt-0.5 w-6 h-6 rounded-full border-2 border-slate-300 flex-shrink-0 active:border-emerald-400 active:bg-emerald-50 transition-colors"
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="text-slate-800 font-medium leading-snug">{task.title}</p>
+                    {isEditing ? (
+                      <input
+                        autoFocus
+                        className="w-full bg-slate-50 border border-indigo-300 rounded-lg px-2 py-1 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-300 text-sm"
+                        value={editTitle}
+                        onChange={e => setEditTitle(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && saveEdit(task)}
+                      />
+                    ) : (
+                      <p className="text-slate-800 font-medium leading-snug">{task.title}</p>
+                    )}
                     <div className="flex flex-wrap gap-2 mt-1.5 items-center">
                       <CategoryBadge category={cat} small />
-                      <TimeChip time={task.estimatedTime} small />
-                      {task.deadline && (
+                      {isEditing ? (
+                        <div className="flex gap-1">
+                          {TIMES.map(t => (
+                            <button key={t} onClick={() => setEditTime(t)}
+                              className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                                editTime === t
+                                  ? 'bg-indigo-500 text-white border-indigo-500'
+                                  : 'bg-white text-slate-400 border-slate-200'
+                              }`}>
+                              {TIME_LABELS[t]}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <TimeChip time={task.estimatedTime} small />
+                      )}
+                      {!isEditing && task.deadline && (
                         <span className={`text-xs font-medium ${
                           overdue ? 'text-rose-500' : today ? 'text-amber-500' : 'text-slate-400'
                         }`}>
@@ -93,9 +142,30 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
                       )}
                     </div>
                   </div>
-                  <button onClick={() => onDelete(task.id)} className="text-slate-300 active:text-rose-400 text-xl leading-none flex-shrink-0">
-                    ×
-                  </button>
+
+                  {isEditing ? (
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => setEditingId(null)}
+                        className="text-xs text-slate-400 px-2 py-1 rounded-lg border border-slate-200">
+                        キャンセル
+                      </button>
+                      <button onClick={() => saveEdit(task)}
+                        className="text-xs text-white bg-indigo-500 px-2 py-1 rounded-lg">
+                        保存
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => startEdit(task)}
+                        className="text-slate-300 active:text-indigo-400 text-base leading-none px-1">
+                        ✏️
+                      </button>
+                      <button onClick={() => onDelete(task.id)}
+                        className="text-slate-300 active:text-rose-400 text-xl leading-none">
+                        ×
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {task.subtasks.length > 0 && (
