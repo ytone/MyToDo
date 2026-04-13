@@ -1,0 +1,29 @@
+name: Morning Briefing
+
+on:
+  schedule:
+    - cron: '0 21 * * *'  # 毎朝6:00 JST (UTC 21:00 前日)
+  workflow_dispatch:       # 手動実行も可能
+
+jobs:
+  briefing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        working-directory: .github/scripts
+        run: npm install
+
+      - name: Send Morning Briefing
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          FIREBASE_USER_UID: ${{ secrets.FIREBASE_USER_UID }}
+          GOOGLE_CALENDAR_CREDENTIALS: ${{ secrets.GOOGLE_CALENDAR_CREDENTIALS }}
+        run: node .github/scripts/morning-briefing.mjs
