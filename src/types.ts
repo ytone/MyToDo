@@ -4,6 +4,7 @@ export interface SubTask {
   id: string
   title: string
   estimatedTime: EstimatedTime
+  deadline: string | null
   completed: boolean
 }
 

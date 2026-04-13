@@ -28,6 +28,7 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
   const [subtasks, setSubtasks] = useState<SubTask[]>([])
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
   const [newSubtaskTime, setNewSubtaskTime] = useState<EstimatedTime>('30')
+  const [newSubtaskDeadline, setNewSubtaskDeadline] = useState('')
   const [showCatForm, setShowCatForm] = useState(false)
   const [editCatMode, setEditCatMode] = useState(false)
   const [confirmDeleteCatId, setConfirmDeleteCatId] = useState<string | null>(null)
@@ -39,9 +40,12 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
     if (!newSubtaskTitle.trim()) return
     setSubtasks(prev => [...prev, {
       id: uuid(), title: newSubtaskTitle.trim(),
-      estimatedTime: newSubtaskTime, completed: false,
+      estimatedTime: newSubtaskTime,
+      deadline: newSubtaskDeadline || null,
+      completed: false,
     }])
     setNewSubtaskTitle('')
+    setNewSubtaskDeadline('')
   }
 
   const removeSubtask = (id: string) => setSubtasks(prev => prev.filter(s => s.id !== id))
@@ -221,8 +225,13 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
           <div className="space-y-2 mb-2">
             {subtasks.map(s => (
               <div key={s.id} className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
-                <span className="flex-1 text-sm text-slate-700">{s.title}</span>
-                <span className="text-xs text-slate-400">{TIME_LABELS[s.estimatedTime]}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-slate-700">{s.title}</span>
+                  {s.deadline && (
+                    <span className="ml-2 text-xs text-slate-400">〆{s.deadline.slice(5).replace('-', '/')}</span>
+                  )}
+                </div>
+                <span className="text-xs text-slate-400 flex-shrink-0">{TIME_LABELS[s.estimatedTime]}</span>
                 <button onClick={() => removeSubtask(s.id)} className="text-slate-300 active:text-rose-400 text-lg leading-none">×</button>
               </div>
             ))}
@@ -236,7 +245,7 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
               onKeyDown={e => e.key === 'Enter' && addSubtask()}
             />
             <div className="flex gap-2">
-              {(['10', '30', '60'] as EstimatedTime[]).map(t => (
+              {TIMES.map(t => (
                 <button key={t} onClick={() => setNewSubtaskTime(t)}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-medium border ${
                     newSubtaskTime === t
@@ -247,6 +256,12 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
                 </button>
               ))}
             </div>
+            <input
+              type="date"
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none [color-scheme:light]"
+              value={newSubtaskDeadline}
+              onChange={e => setNewSubtaskDeadline(e.target.value)}
+            />
             <button onClick={addSubtask}
               className="w-full bg-slate-100 active:bg-slate-200 text-slate-600 rounded-lg py-2 text-sm font-medium border border-slate-200">
               + サブタスク追加

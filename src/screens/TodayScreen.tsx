@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Category, EstimatedTime, Task } from '../types'
+import { v4 as uuid } from 'uuid'
+import { Category, EstimatedTime, SubTask, Task } from '../types'
 import CategoryBadge from '../components/CategoryBadge'
 import TimeChip from '../components/TimeChip'
 import { format, isToday, isBefore, parseISO } from 'date-fns'
@@ -35,6 +36,12 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [editTime, setEditTime] = useState<EstimatedTime>('30')
+  const [editCategoryId, setEditCategoryId] = useState('')
+  const [editDeadline, setEditDeadline] = useState('')
+  const [editSubtasks, setEditSubtasks] = useState<SubTask[]>([])
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
+  const [newSubtaskTime, setNewSubtaskTime] = useState<EstimatedTime>('30')
+  const [newSubtaskDeadline, setNewSubtaskDeadline] = useState('')
 
   const pending = tasks.filter(t => !t.completed)
   const done = tasks.filter(t => t.completed)
@@ -56,13 +63,47 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
     setEditingId(task.id)
     setEditTitle(task.title)
     setEditTime(task.estimatedTime)
+    setEditCategoryId(task.categoryId)
+    setEditDeadline(task.deadline ?? '')
+    setEditSubtasks(task.subtasks.map(s => ({ ...s, deadline: s.deadline ?? null })))
+    setNewSubtaskTitle('')
+    setNewSubtaskTime('30')
+    setNewSubtaskDeadline('')
   }
 
   const saveEdit = (task: Task) => {
     if (editTitle.trim()) {
-      onUpdate({ ...task, title: editTitle.trim(), estimatedTime: editTime })
+      onUpdate({
+        ...task,
+        title: editTitle.trim(),
+        estimatedTime: editTime,
+        categoryId: editCategoryId,
+        deadline: editDeadline || null,
+        subtasks: editSubtasks,
+      })
     }
     setEditingId(null)
+  }
+
+  const addEditSubtask = () => {
+    if (!newSubtaskTitle.trim()) return
+    setEditSubtasks(prev => [...prev, {
+      id: uuid(),
+      title: newSubtaskTitle.trim(),
+      estimatedTime: newSubtaskTime,
+      deadline: newSubtaskDeadline || null,
+      completed: false,
+    }])
+    setNewSubtaskTitle('')
+    setNewSubtaskDeadline('')
+  }
+
+  const updateEditSubtask = (id: string, changes: Partial<SubTask>) => {
+    setEditSubtasks(prev => prev.map(s => s.id === id ? { ...s, ...changes } : s))
+  }
+
+  const removeEditSubtask = (id: string) => {
+    setEditSubtasks(prev => prev.filter(s => s.id !== id))
   }
 
   const toggleSubtask = (task: Task, subtaskId: string) => {
@@ -97,31 +138,177 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
 
             return (
               <div key={task.id} className="bg-white rounded-2xl p-4 space-y-2 border border-slate-100 shadow-sm">
-                <div className="flex items-start gap-2">
-                  <button
-                    onClick={() => onComplete(task.id)}
-                    className="mt-0.5 w-6 h-6 rounded-full border-2 border-slate-300 flex-shrink-0 active:border-emerald-400 active:bg-emerald-50 transition-colors"
-                  />
-                  <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <input
-                        autoFocus
-                        className="w-full bg-slate-50 border border-indigo-300 rounded-lg px-2 py-1 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-300 text-sm"
-                        value={editTitle}
-                        onChange={e => setEditTitle(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && saveEdit(task)}
+                {/* ─── 通常表示 ─── */}
+                {!isEditing && (
+                  <>
+                    <div className="flex items-start gap-2">
+                      <button
+                        onClick={() => onComplete(task.id)}
+                        className="mt-0.5 w-6 h-6 rounded-full border-2 border-slate-300 flex-shrink-0 active:border-emerald-400 active:bg-emerald-50 transition-colors"
                       />
-                    ) : (
-                      <p className="text-slate-800 font-medium leading-snug">{task.title}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-slate-800 font-medium leading-snug">{task.title}</p>
+                        <div className="flex flex-wrap gap-2 mt-1.5 items-center">
+                          <CategoryBadge category={cat} small />
+                          <TimeChip time={task.estimatedTime} small />
+                          {task.deadline && (
+                            <span className={`text-xs font-medium ${
+                              overdue ? 'text-rose-500' : today ? 'text-amber-500' : 'text-slate-400'
+                            }`}>
+                              {overdue ? '期限切れ ' : today ? '今日 ' : ''}
+                              {format(parseISO(task.deadline), 'M/d(E)', { locale: ja })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button onClick={() => startEdit(task)}
+                          className="text-slate-300 active:text-indigo-400 text-base leading-none px-1">
+                          ✏️
+                        </button>
+                        <button onClick={() => onDelete(task.id)}
+                          className="text-slate-300 active:text-rose-400 text-xl leading-none">
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                    {task.subtasks.length > 0 && (
+                      <div className="ml-8 space-y-1.5 pt-2 border-t border-slate-100">
+                        {task.subtasks.map(s => (
+                          <div key={s.id} className="flex items-center gap-2">
+                            <button
+                              onClick={() => toggleSubtask(task, s.id)}
+                              className={`w-4 h-4 rounded border flex-shrink-0 transition-colors ${
+                                s.completed ? 'bg-emerald-400 border-emerald-400' : 'border-slate-300'
+                              }`}
+                            >
+                              {s.completed && <span className="text-[10px] text-white flex items-center justify-center w-full h-full">✓</span>}
+                            </button>
+                            <span className={`text-sm flex-1 ${s.completed ? 'line-through text-slate-400' : 'text-slate-600'}`}>
+                              {s.title}
+                            </span>
+                            {s.deadline && (
+                              <span className={`text-xs flex-shrink-0 ${isOverdue(s.deadline) ? 'text-rose-400' : isDueToday(s.deadline) ? 'text-amber-400' : 'text-slate-400'}`}>
+                                〆{s.deadline.slice(5).replace('-', '/')}
+                              </span>
+                            )}
+                            <TimeChip time={s.estimatedTime} small />
+                          </div>
+                        ))}
+                      </div>
                     )}
-                    <div className="flex flex-wrap gap-2 mt-1.5 items-center">
-                      <CategoryBadge category={cat} small />
-                      {isEditing ? (
+                  </>
+                )}
+
+                {/* ─── 編集モード ─── */}
+                {isEditing && (
+                  <div className="space-y-3">
+                    {/* タイトル */}
+                    <input
+                      autoFocus
+                      className="w-full bg-slate-50 border border-indigo-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-300 text-sm"
+                      value={editTitle}
+                      onChange={e => setEditTitle(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveEdit(task)}
+                    />
+
+                    {/* カテゴリ */}
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">カテゴリ</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {categories.map(c => (
+                          <button key={c.id} onClick={() => setEditCategoryId(c.id)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                              editCategoryId === c.id
+                                ? 'bg-slate-700 text-white border-slate-700'
+                                : 'bg-white text-slate-500 border-slate-200'
+                            }`}>
+                            <span className={`w-2 h-2 rounded-full ${c.color}`} />
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 時間 */}
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">概算時間</p>
+                      <div className="flex gap-1">
+                        {TIMES.map(t => (
+                          <button key={t} onClick={() => setEditTime(t)}
+                            className={`flex-1 py-1.5 rounded-lg text-xs font-medium border ${
+                              editTime === t
+                                ? 'bg-indigo-500 text-white border-indigo-500'
+                                : 'bg-white text-slate-400 border-slate-200'
+                            }`}>
+                            {TIME_LABELS[t]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 締め切り */}
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">締め切り</p>
+                      <input
+                        type="date"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-600 focus:outline-none [color-scheme:light]"
+                        value={editDeadline}
+                        onChange={e => setEditDeadline(e.target.value)}
+                      />
+                    </div>
+
+                    {/* サブタスク */}
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">サブタスク</p>
+                      <div className="space-y-2 mb-2">
+                        {editSubtasks.map(s => (
+                          <div key={s.id} className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-1.5">
+                            <div className="flex items-center gap-2">
+                              <input
+                                className="flex-1 bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 focus:outline-none"
+                                value={s.title}
+                                onChange={e => updateEditSubtask(s.id, { title: e.target.value })}
+                              />
+                              <button onClick={() => removeEditSubtask(s.id)}
+                                className="text-slate-300 active:text-rose-400 text-base leading-none flex-shrink-0">×</button>
+                            </div>
+                            <div className="flex gap-1">
+                              {TIMES.map(t => (
+                                <button key={t} onClick={() => updateEditSubtask(s.id, { estimatedTime: t })}
+                                  className={`flex-1 py-1 rounded text-[10px] font-medium border ${
+                                    s.estimatedTime === t
+                                      ? 'bg-indigo-500 text-white border-indigo-500'
+                                      : 'bg-white text-slate-400 border-slate-200'
+                                  }`}>
+                                  {TIME_LABELS[t]}
+                                </button>
+                              ))}
+                            </div>
+                            <input
+                              type="date"
+                              className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-500 focus:outline-none [color-scheme:light]"
+                              value={s.deadline ?? ''}
+                              onChange={e => updateEditSubtask(s.id, { deadline: e.target.value || null })}
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* 新サブタスク追加フォーム */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 space-y-1.5">
+                        <input
+                          className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-700 placeholder-slate-300 focus:outline-none"
+                          placeholder="+ サブタスク名"
+                          value={newSubtaskTitle}
+                          onChange={e => setNewSubtaskTitle(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && addEditSubtask()}
+                        />
                         <div className="flex gap-1">
                           {TIMES.map(t => (
-                            <button key={t} onClick={() => setEditTime(t)}
-                              className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
-                                editTime === t
+                            <button key={t} onClick={() => setNewSubtaskTime(t)}
+                              className={`flex-1 py-1 rounded text-[10px] font-medium border ${
+                                newSubtaskTime === t
                                   ? 'bg-indigo-500 text-white border-indigo-500'
                                   : 'bg-white text-slate-400 border-slate-200'
                               }`}>
@@ -129,65 +316,30 @@ export default function TodayScreen({ tasks, categories, onComplete, onDelete, o
                             </button>
                           ))}
                         </div>
-                      ) : (
-                        <TimeChip time={task.estimatedTime} small />
-                      )}
-                      {!isEditing && task.deadline && (
-                        <span className={`text-xs font-medium ${
-                          overdue ? 'text-rose-500' : today ? 'text-amber-500' : 'text-slate-400'
-                        }`}>
-                          {overdue ? '期限切れ ' : today ? '今日 ' : ''}
-                          {format(parseISO(task.deadline), 'M/d(E)', { locale: ja })}
-                        </span>
-                      )}
+                        <input
+                          type="date"
+                          className="w-full bg-white border border-slate-200 rounded px-2 py-1 text-xs text-slate-500 focus:outline-none [color-scheme:light]"
+                          value={newSubtaskDeadline}
+                          onChange={e => setNewSubtaskDeadline(e.target.value)}
+                        />
+                        <button onClick={addEditSubtask}
+                          className="w-full bg-white border border-slate-200 text-slate-500 rounded py-1 text-xs font-medium active:bg-slate-100">
+                          追加
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {isEditing ? (
-                    <div className="flex gap-1 flex-shrink-0">
+                    {/* 保存・キャンセル */}
+                    <div className="flex gap-2 pt-1">
                       <button onClick={() => setEditingId(null)}
-                        className="text-xs text-slate-400 px-2 py-1 rounded-lg border border-slate-200">
+                        className="flex-1 py-2 rounded-xl text-sm border border-slate-200 text-slate-500 bg-white">
                         キャンセル
                       </button>
                       <button onClick={() => saveEdit(task)}
-                        className="text-xs text-white bg-indigo-500 px-2 py-1 rounded-lg">
+                        className="flex-1 py-2 rounded-xl text-sm bg-indigo-500 text-white font-medium">
                         保存
                       </button>
                     </div>
-                  ) : (
-                    <div className="flex gap-1 flex-shrink-0">
-                      <button onClick={() => startEdit(task)}
-                        className="text-slate-300 active:text-indigo-400 text-base leading-none px-1">
-                        ✏️
-                      </button>
-                      <button onClick={() => onDelete(task.id)}
-                        className="text-slate-300 active:text-rose-400 text-xl leading-none">
-                        ×
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {task.subtasks.length > 0 && (
-                  <div className="ml-8 space-y-1.5 pt-2 border-t border-slate-100">
-                    {task.subtasks.map(s => (
-                      <div key={s.id} className="flex items-center gap-2">
-                        <button
-                          onClick={() => toggleSubtask(task, s.id)}
-                          className={`w-4 h-4 rounded border flex-shrink-0 transition-colors ${
-                            s.completed
-                              ? 'bg-emerald-400 border-emerald-400'
-                              : 'border-slate-300'
-                          }`}
-                        >
-                          {s.completed && <span className="text-[10px] text-white flex items-center justify-center w-full h-full">✓</span>}
-                        </button>
-                        <span className={`text-sm flex-1 ${s.completed ? 'line-through text-slate-400' : 'text-slate-600'}`}>
-                          {s.title}
-                        </span>
-                        <TimeChip time={s.estimatedTime} small />
-                      </div>
-                    ))}
                   </div>
                 )}
               </div>
