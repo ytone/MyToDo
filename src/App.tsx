@@ -7,30 +7,18 @@ import NextTaskScreen from './screens/NextTaskScreen'
 import AddTaskScreen from './screens/AddTaskScreen'
 import TodayScreen from './screens/TodayScreen'
 import LoginScreen from './screens/LoginScreen'
+import { User } from 'firebase/auth'
 
-export default function App() {
+// ログイン済みの場合のみStoreを使うコンポーネント
+function AuthenticatedApp({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [screen, setScreen] = useState<Screen>('next')
-  const { user, loading, login, logout } = useAuth()
-  const store = useStore(user?.uid ?? '')
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-slate-300 text-sm">読み込み中...</div>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return <LoginScreen onLogin={login} />
-  }
+  const store = useStore(user.uid)
 
   return (
     <div className="flex flex-col h-full bg-indigo-50/60">
-      {/* ヘッダー */}
       <div className="flex items-center justify-between px-4 pt-4 pb-1">
         <span className="text-xs text-slate-400">{user.displayName}</span>
-        <button onClick={logout} className="text-xs text-slate-400 active:text-slate-600">
+        <button onClick={onLogout} className="text-xs text-slate-400 active:text-slate-600">
           ログアウト
         </button>
       </div>
@@ -66,4 +54,22 @@ export default function App() {
       <BottomNav current={screen} onChange={setScreen} />
     </div>
   )
+}
+
+export default function App() {
+  const { user, loading, login, logout } = useAuth()
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-indigo-50/60">
+        <div className="text-slate-400 text-sm">読み込み中...</div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginScreen onLogin={login} />
+  }
+
+  return <AuthenticatedApp user={user} onLogout={logout} />
 }
