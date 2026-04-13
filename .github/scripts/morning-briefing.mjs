@@ -5,6 +5,9 @@ const FIREBASE_API_KEY        = process.env.FIREBASE_API_KEY
 const FIREBASE_PROJECT_ID     = process.env.FIREBASE_PROJECT_ID
 const FIREBASE_USER_UID       = process.env.FIREBASE_USER_UID
 const GOOGLE_CREDENTIALS      = JSON.parse(process.env.GOOGLE_CALENDAR_CREDENTIALS)
+const CALENDAR_IDS            = process.env.CALENDAR_IDS
+  ? process.env.CALENDAR_IDS.split(',').map(s => s.trim())
+  : []
 
 // ─── 日付ユーティリティ ──────────────────────────────
 const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000)
@@ -23,10 +26,7 @@ async function getCalendarEvents() {
   })
   const calendar = google.calendar({ version: 'v3', auth })
 
-  const calendarIds = [
-    'CALENDAR_ID_1',
-    'CALENDAR_ID_2',
-  ]
+  const calendarIds = CALENDAR_IDS
 
   const allEvents = []
   for (const calendarId of calendarIds) {
