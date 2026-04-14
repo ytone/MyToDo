@@ -24,7 +24,7 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
   const [title, setTitle] = useState('')
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? '')
   const [deadline, setDeadline] = useState('')
-  const [estimatedTime, setEstimatedTime] = useState<EstimatedTime>('30')
+  const [estimatedTime, setEstimatedTime] = useState<EstimatedTime | null>(null)
   const [subtasks, setSubtasks] = useState<SubTask[]>([])
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
   const [newSubtaskTime, setNewSubtaskTime] = useState<EstimatedTime>('30')
@@ -51,13 +51,13 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
   const removeSubtask = (id: string) => setSubtasks(prev => prev.filter(s => s.id !== id))
 
   const handleSubmit = () => {
-    if (!title.trim()) return
+    if (!title.trim() || !estimatedTime) return
     onAdd({
       id: uuid(),
       title: title.trim(),
       categoryId,
       deadline: deadline || null,
-      estimatedTime,
+      estimatedTime: estimatedTime ?? '30',
       subtasks,
       completed: false,
       createdAt: new Date().toISOString(),
@@ -216,6 +216,9 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
             </button>
           ))}
         </div>
+        {estimatedTime === null && (
+          <p className="text-xs text-amber-500 mt-1">※ 時間を選択してください</p>
+        )}
       </div>
 
       {/* Subtasks */}
@@ -273,7 +276,7 @@ export default function AddTaskScreen({ tasks, categories, onAdd, onAddCategory,
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={!title.trim()}
+        disabled={!title.trim() || !estimatedTime}
         className={`w-full py-4 rounded-2xl text-base font-bold transition-all shadow-sm ${
           saved
             ? 'bg-emerald-400 text-white'
