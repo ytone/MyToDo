@@ -1,7 +1,6 @@
 import { google } from 'googleapis'
 
 const SLACK_WEBHOOK_URL       = process.env.SLACK_WEBHOOK_URL
-const FIREBASE_API_KEY        = process.env.FIREBASE_API_KEY
 const FIREBASE_PROJECT_ID     = process.env.FIREBASE_PROJECT_ID
 const FIREBASE_USER_UID       = process.env.FIREBASE_USER_UID
 const GOOGLE_CREDENTIALS      = JSON.parse(process.env.GOOGLE_CALENDAR_CREDENTIALS)
@@ -18,18 +17,19 @@ const dateLabel = `${parseInt(mm)}/${parseInt(dd)}`
 const todayMin  = `${yyyy}-${mm}-${dd}T00:00:00+09:00`
 const todayMax  = `${yyyy}-${mm}-${dd}T23:59:59+09:00`
 
+// ─── Google Auth（共通）──────────────────────────────
+async function getAuthClient(scopes) {
+  const auth = new google.auth.GoogleAuth({ credentials: GOOGLE_CREDENTIALS, scopes })
+  return auth
+}
+
 // ─── Google Calendar ─────────────────────────────────
 async function getCalendarEvents() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: GOOGLE_CREDENTIALS,
-    scopes: ['https://www.googleapis.com/auth/calendar.readonly'],
-  })
+  const auth = await getAuthClient(['https://www.googleapis.com/auth/calendar.readonly'])
   const calendar = google.calendar({ version: 'v3', auth })
 
-  const calendarIds = CALENDAR_IDS
-
   const allEvents = []
-  for (const calendarId of calendarIds) {
+  for (const calendarId of CALENDAR_IDS) {
     try {
       const res = await calendar.events.list({
         calendarId,
@@ -44,7 +44,6 @@ async function getCalendarEvents() {
     }
   }
 
-  // 時刻順にソート
   allEvents.sort((a, b) => {
     const aTime = a.start?.dateTime || a.start?.date || ''
     const bTime = b.start?.dateTime || b.start?.date || ''
@@ -54,22 +53,30 @@ async function getCalendarEvents() {
   return allEvents
 }
 
-// ─── Firestore タスク取得 ────────────────────────────
+// ─── Firestore タスク取得（OAuth2 認証でセキュリティルールをバイパス）────
 async function getTasks() {
-  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${FIREBASE_USER_UID}/tasks?key=${FIREBASE_API_KEY}&pageSize=50`
-  const res  = await fetch(url)
+  const auth = await getAuthClient(['https://www.googleapis.com/auth/datastore'])
+  const accessToken = await auth.getAccessToken()
+
+  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${FIREBASE_USER_UID}/tasks?pageSize=100`
+  const res  = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${accessToken}` }
+  })
   const data = await res.json()
 
-  if (!data.documents) return []
+  if (!data.documents) {
+    console.error('Firestore response:', JSON.stringify(data))
+    return []
+  }
 
   return data.documents
     .map(doc => {
       const f = doc.fields || {}
       return {
-        title:         f.title?.stringValue       || '',
+        title:         f.title?.stringValue        || '',
         estimatedTime: f.estimatedTime?.stringValue || '',
-        deadline:      f.deadline?.stringValue      || null,
-        completed:     f.completed?.booleanValue    || false,
+        deadline:      f.deadline?.stringValue       || null,
+        completed:     f.completed?.booleanValue     || false,
       }
     })
     .filter(t => !t.completed)
@@ -95,8 +102,7 @@ function urgencyIcon(deadline) {
 // ─── 時刻フォーマット ────────────────────────────────
 function formatTime(event) {
   if (event.start?.date) return '終日'
-  const dt = new Date(event.start?.dateTime)
-  // JST = UTC + 9h
+  const dt  = new Date(event.start?.dateTime)
   const jst = new Date(dt.getTime() + 9 * 60 * 60 * 1000)
   const h   = String(jst.getUTCHours()).padStart(2, '0')
   const m   = String(jst.getUTCMinutes()).padStart(2, '0')
@@ -132,34 +138,41 @@ async function main() {
       summary:     e.summary || '（タイトルなし）',
       location:    e.location || null,
       description: e.description || null,
-      start:       new Date(new Date(e.start.dateTime).getTime()),
-      end:         new Date(new Date(e.end.dateTime).getTime()),
+      start:       new Date(e.start.dateTime),
+      end:         new Date(e.end.dateTime),
     }))
 
   // ─── お昼ご飯の提案 ──────────────────────────────────
-  // 11:00〜14:00 JSTの範囲で空きスロットを探す
-  const lunchStart = new Date(`${yyyy}-${mm}-${dd}T11:00:00+09:00`)
-  const lunchEnd   = new Date(`${yyyy}-${mm}-${dd}T14:00:00+09:00`)
+  // カレンダーに昼食・ランチが既に入っているか確認（タイトルに含む場合も含む）
+  const lunchKeywords = ['昼食', 'ランチ', 'lunch', 'Lunch', 'LUNCH', '昼ご飯', '昼めし']
+  const hasLunchEvent = events.some(e =>
+    lunchKeywords.some(kw => (e.summary || '').includes(kw))
+  )
 
-  // 候補スロット（30分刻み）
-  const lunchSlots = ['11:00','11:30','12:00','12:30','13:00','13:30']
   let lunchSuggestion = null
-  for (const slot of lunchSlots) {
-    const [h, m] = slot.split(':').map(Number)
-    const slotStart = new Date(`${yyyy}-${mm}-${dd}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00+09:00`)
-    const slotEnd   = new Date(slotStart.getTime() + 30 * 60 * 1000)
-    const conflict  = timedEvents.some(e => e.start < slotEnd && e.end > slotStart)
-    if (!conflict) {
-      lunchSuggestion = `🍱 ランチは *${slot}〜* が空いています。`
-      break
+  if (hasLunchEvent) {
+    // 昼食がカレンダーに入っている場合は提案しない
+    lunchSuggestion = null
+  } else {
+    // 空き時間を探す（30分刻み、端点を重複なく判定）
+    const lunchSlots = ['11:00','11:30','12:00','12:30','13:00','13:30']
+    for (const slot of lunchSlots) {
+      const [h, m] = slot.split(':').map(Number)
+      const slotStart = new Date(`${yyyy}-${mm}-${dd}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00+09:00`)
+      const slotEnd   = new Date(slotStart.getTime() + 30 * 60 * 1000)
+      // 端点は除く（開始時刻ぴったりに終わるイベントは競合しない）
+      const conflict = timedEvents.some(e => e.start < slotEnd && e.end > slotStart)
+      if (!conflict) {
+        lunchSuggestion = `🍱 ランチは *${slot}〜* が空いています。`
+        break
+      }
     }
-  }
-  if (!lunchSuggestion) {
-    lunchSuggestion = '🍱 ランチタイムの空きがないので、予定の合間に食べましょう。'
+    if (!lunchSuggestion) {
+      lunchSuggestion = '🍱 ランチタイムの空きがないので、予定の合間に食べましょう。'
+    }
   }
 
   // ─── 移動情報 ────────────────────────────────────────
-  // 「移動」で始まるイベント：説明文から詳細をパース
   function parseTravelEvent(e) {
     const time      = formatTime({ start: { dateTime: e.start.toISOString() } })
     const desc      = e.description || ''
@@ -180,7 +193,6 @@ async function main() {
       : `🚃 ${time} ${e.summary}`
   }
 
-  // location ありイベント（「移動」以外）：シンプルな移動通知
   function parseLocationEvent(e) {
     const time = formatTime({ start: { dateTime: e.start.toISOString() } })
     return `📍 ${time} 「${e.summary}」に向けて移動が必要です（${e.location}）`
@@ -193,16 +205,26 @@ async function main() {
   const travelInfo = travelLines.length > 0 ? travelLines.join('\n') : null
 
   // ─── アドバイス本文 ──────────────────────────────────
-  const busyHours = timedEvents.map(e => `${formatTime({ start: { dateTime: e.start.toISOString() } })} ${e.summary}`).join('、')
-  const adviceBase = busyHours
-    ? `今日は ${busyHours} の予定があります。`
-    : '今日は会議がなく、集中できる一日です。'
   const urgentTask = tasks.find(t => urgencyIcon(t.deadline) === '🔴')
-  const adviceParts = [
-    adviceBase,
-    urgentTask ? `まず「${urgentTask.title}」を最優先で片付けましょう。` : '計画的に進めていきましょう。',
-    lunchSuggestion,
-  ].filter(Boolean)
+
+  const scheduleLines = timedEvents.length > 0
+    ? timedEvents.map(e => `• ${formatTime({ start: { dateTime: e.start.toISOString() } })} ${e.summary}`).join('\n')
+    : '• 今日は予定なし'
+
+  const adviceParts = [scheduleLines]
+
+  if (urgentTask) {
+    adviceParts.push(`🔴 まず「${urgentTask.title}」を最優先で片付けましょう。`)
+  } else if (timedEvents.length === 0) {
+    adviceParts.push('今日は予定がなく、集中できる一日です。計画的に進めていきましょう。')
+  } else {
+    adviceParts.push('隙間時間を活用して進めていきましょう。')
+  }
+
+  if (lunchSuggestion) {
+    adviceParts.push(lunchSuggestion)
+  }
+
   const advice = adviceParts.join('\n')
 
   const travelSection = travelInfo
@@ -210,9 +232,6 @@ async function main() {
     : ''
 
   const message = `おはようございます、裕太さん！☀️
-
-*📅 今日のスケジュール（${dateLabel}）*
-${calLines}
 ${travelSection}
 *✅ タスク（緊急順）*
 ${taskLines}
@@ -222,15 +241,14 @@ ${advice}
 
 今日もいい一日を！💪`
 
-  // Slack送信
-  const res = await fetch(SLACK_WEBHOOK_URL, {
+  const slackRes = await fetch(SLACK_WEBHOOK_URL, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ text: message }),
   })
 
-  if (!res.ok) {
-    throw new Error(`Slack送信失敗: ${res.status} ${await res.text()}`)
+  if (!slackRes.ok) {
+    throw new Error(`Slack送信失敗: ${slackRes.status} ${await slackRes.text()}`)
   }
   console.log('✅ 送信完了')
 }
